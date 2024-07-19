@@ -1,0 +1,14 @@
+version: "1"
+
+services:
+  postgres:
+    image: postgres
+    ports:
+      - '8081:80'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_PASSWORD=1234
+      - POSTGRES_USER=david
+volumes:
+  pgdata:

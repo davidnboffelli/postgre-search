@@ -1,0 +1,121 @@
+TRABAJO DE CAMPO
+
+docker pull postgres
+docker run --name postgres -e POSTGRES_PASSWORD=1234 -e POSTGRES_USER=david -d postgres
+docker exec -it postgres bash
+psql -U david
+
+- Investigar cómo crear, modificar y eliminar bases de datos y roles de usuario.
+https://www.todopostgresql.com/como-crear-base-de-datos-en-postgresql/
+\l para listar databases
+create database nuevadb;
+create database nuevadbwtemplate with template template1;
+CREATE DATABASE nuevadb WITH OWNER usuario;
+create database nuevadblimit CONNECTION_LIMIT 10;
+
+createdb -U david tablatest
+createdb -U david -T template1 tablatest
+createdb -U david -c 10 tablatest
+
+createuser -U david --interactive todopostgre
+
+create user otrouser with password '1234';
+GRANT ALL PRIVILEGES ON DATABASE nuevadb to otrouser;
+
+alter role otrouser password '22';
+
+revoke all privileges on database nuevadb from otrouser;
+drop role otrouser;
+
+CREATE TABLE t_sales (
+    number VARCHAR(12) PRIMARY KEY,
+    external_number VARCHAR(12),
+    class CHAR(1),
+    date TIMESTAMP,
+    total_price FLOAT,
+    tax FLOAT
+);
+
+INSERT INTO t_sales (number, external_number, class, date, total_price, tax) VALUES
+('000000000001', 'EXT000001', 'A', '2024-07-16 10:00:00', 100.50, 10.05),
+('000000000002', 'EXT000002', 'B', '2024-07-16 11:00:00', 200.75, 20.07),
+('000000000003', 'EXT000003', 'A', '2024-07-16 12:00:00', 150.20, 15.02),
+('000000000004', 'EXT000004', 'C', '2024-07-16 13:00:00', 300.90, 30.09),
+('000000000005', 'EXT000005', 'B', '2024-07-16 14:00:00', 250.60, 25.06);
+
+select * from t_sales
+
+alter database nuevadblimit rename to ndbl
+alter database ndbl with connection_limit 15;
+
+- Investigar cómo realizar copias de seguridad y restauraciones de manera confiable y asegurándote de que hayan funcionado correctamente(quiero que si por un casual falle algo los datos no queden comprometidos) utilizando pg_dump y pg_restore.
+
+pg_dump -U david -d david -F t
+pg_restore -l tmp/asdsa.tar
+
+- Estudiar las técnicas de optimización de consultas y cómo usar EXPLAIN para analizar el rendimiento de las consultas.
+https://nodeteam.medium.com/how-to-optimize-postgresql-queries-226e6ff15f72
+
+create INDEX t_sales_date_idx ON t_sales (date);
+En caso de que se consulte mucho por un campo especifico en una tablatest
+
+CREATE TABLE t_sales_details (
+    number VARCHAR(12),
+    item VARCHAR(30),
+    total_price FLOAT,
+    tax FLOAT
+);
+
+CREATE TABLE o_customers (
+    id VARCHAR(12) PRIMARY KEY,
+    name VARCHAR(30)
+);
+
+INSERT INTO o_customers VALUES
+('0001','David Boffelli'),
+('0002','Abelardo Boffelli'),
+('0003','Fabiana Barra');
+
+INSERT INTO t_sales_details (number, item, total_price, tax) VALUES
+('000000000001', 'Pescado', 100.50, 10.05),
+('000000000002', 'Pollo', 200.75, 20.07),
+('000000000001', 'Carne', 150.20, 15.02);
+
+explain select * from t_sales s inner join t_sales_details sd on s.number = sd.number where s.number = '000000000001';
+
+Evitar el uso de %
+
+Usar limites
+select * from t_sales limit 100;
+
+usar el tipo apropiado de datos, no excederse en la cantidad de memoria brindada
+
+priorizar joins sobre subconsultas
+
+usar prepared statements, stored procedures?
+prepare get_document_data(number) as select * from t_sales s inner join t_sales_details sd on s.number = sd.number where s.number = $number;
+execute get_document_data(000000000001);
+execute get_document_data(000000000002);
+
+Analyzing: When you create an index on a table or run a query that filters or sorts data, PostgreSQL uses statistics to estimate how many rows match the conditions. The database statistics include information about the distribution of the data, such as the number of distinct values and the frequency of each value. The statistics are stored in a system catalog called pg_statistic. If the statistics are outdated or inaccurate, the query planner may make poor decisions and generate inefficient query plans.
+Vacuuming: When you insert, update, or delete rows in a table, PostgreSQL doesn’t immediately release the disk space used by the old rows. Instead, it marks the space as reusable and waits for new rows to fill it up. This is called “dead” space, and it can accumulate over time and lead to fragmentation and poor performance. Vacuuming is the process of reclaiming dead space and returning it to the operating system for reuse.
+
+analyze t_sales;
+VACUUM t_sales;
+
+- Configurar herramientas de monitoreo como pg_stat_statements para analizar el rendimiento de la base de datos.
+https://a2systems.co/blog/blog-2/usando-pg-stat-statements-167
+agregar volumenes 
+
+- Investigar cómo funcionan las transacciones en PostgreSQL y el manejo de bloqueos(conocidos como deadlocks).
+https://medium.com/yavar/transactions-in-postgresql-a90b09faa80c
+https://medium.com/@anton.martyniuk/getting-started-with-sql-transactions-in-postgresql-ca6285175d62
+
+https://www.postgresql.org/docs/current/explicit-locking.html
+https://www.linkedin.com/pulse/deadlock-resolving-deadlocks-skip-locked-postgresql-sarvaha-systems
+https://www.cybertec-postgresql.com/en/postgresql-understanding-deadlocks/
+
+- Investigar cómo configurar la autenticación y autorización en PostgreSQL.
+https://medium.com/@s.k.thakur.contact/postgresql-authorization-and-authentication-5f1ddb2c4a59
+
+

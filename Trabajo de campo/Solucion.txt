@@ -1,0 +1,226 @@
+Para realizar las pruebas de todo lo investigado, levanté una imagen de postgres con el siguiente docker-compose.yaml
+
+version: "1"
+
+services:
+  postgres:
+    image: postgres
+    ports:
+      - '8081:80'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_PASSWORD=1234
+      - POSTGRES_USER=david
+volumes:
+  pgdata:
+
+-----------------------------------------------------------------------------
+Investigar cómo crear, modificar y eliminar bases de datos y roles de usuario
+-----------------------------------------------------------------------------
+
+Hay dos formas de crear bases de datos y roles.
+Primera forma - base de datos: ingresando a la base de datos y usando la query correspondiente.
+
+Ejemplos de creacion, edición y elminación de bases de datos:
+create database nuevadb; # Crea una base de datos con el nombre "nuevadb"
+create database nuevadbtemp with template template1; # Crea una base de datos con el nombre nuevadbtemp, utilizando de base el template "template1". Un template es una plantilla que tiene una estructura de base de datos definida
+create database nuevadb WITH OWNER usuario; # Crea una base de datos con el nombre nuevadb y asigna al usuario "usuario" como dueño de la misma
+create database nuevadblimit CONNECTION_LIMIT 10; # Crea una base de datos de nombre "nuevadblimit" y le pone un límite de 10 conexiones al pull de conexiones
+alter database nuevadblimit rename to ndbl; # Edita la base de datos "nuevadblimit" y le cambia el nombre a "ndbl"
+alter database ndbl with connection_limit 15; # Edita la base de datos "ndbl" y le cambia el limite de conexiones del pull de conexiones a 15
+drop ndbl; # Elimina la base de datos "ndbl". Solo puede hacerlo el dueño y no estando conectado a la misma
+
+Ejemplos de creacion, edición y eliminación de roles/usuarios:
+
+create user otrouser with password '1234'; # Crea un usuario de nombre "otrouser" y le asigna un password
+GRANT ALL PRIVILEGES ON DATABASE nuevadb to otrouser; # Al usuario "otrouser" le asigna todos los privilegios y permisos sobre la base de datos "nuevadb"
+alter role otrouser password '22'; # Edita el usuario "otrouser" para asignarle un password
+revoke all privileges on database nuevadb from otrouser; # Revoca todos los privilegios y permisos del usuario "otrouser" sobre la base de datos "nuevadb"
+drop role otrouser; # elimina al usuario "otrouser"
+
+CREATE USER readaccess with PASSWORD 'jw8s0F4'; # Creo el usuario "readaccess" con un password
+GRANT CONNECT ON DATABASE library TO readaccess; # Le doy permiso para loggearse en la base de datos "library"
+GRANT pg_read_all_data TO readaccess; # Le asigno un rol predefinido que le da persisos de lectura.
+
+CREATE USER writeUser WITH PASSWORD 'jw8s0F4'; # Creo el usuario "writeUser" con un password
+GRANT CONNECT ON DATABASE library TO writeUser; # Le doy permiso para loggearse a la base de datos "library"
+GRANT pg_write_all_data TO writeUser; # Le asigno permisos de escritura al usuario "writeUser", vinculándolo a un rol preexistente
+
+Segunda forma - a través de funciones: por fuera de la base de datos, sin estar conectado
+Ejemplos de creacion, edición y elminación de bases de datos:
+createdb -U david tablatest #  Crea la base de datos "tablatest" y asigna al usuario "david" como dueño
+createdb -U david -T template1 tablatest2 # Crea la base de datos "tablatest2" con el template "template1" y asigna al usuario "david" como dueño
+createdb -U david -c 10 tablatest3 # Crea la base de datos "tablatest3", con un limite de conexiones de 10 y asigna al usuario "david" como dueño
+dropdb -U david tablatest # Elimina la base de datos "tablatest"
+
+Ejemplos de creacion, edición y eliminación de roles/usuarios:
+createuser -U david --interactive todopostgre # Crea el usuario "todopostgre" en modo interactivo. Es decir, que a través de prompts consulta sobre la asignación de permisos.
+dropuser -U david todopostgre; # Elimina al usuario "todopostgre"
+
+Desde dentro de la base de datos:
+\l # para listar las bases de datos
+\du # para listar los roles
+
+Referencia: https://www.todopostgresql.com/como-crear-base-de-datos-en-postgresql/
+
+-----------------------------------------------------------------------------
+Investigar cómo realizar copias de seguridad y restauraciones de manera confiable y asegurándote de que hayan funcionado correctamente(quiero que si por un casual falle algo los datos no queden comprometidos) utilizando pg_dump y pg_restore
+-----------------------------------------------------------------------------
+
+pg_dump -U david -d david -F t # Para crear un backup de la base de datos de nombre "david" en formato tar (comprimido)
+pg_restore -l tmp/backup.tar # Para verificar el backup ubicado en "tmp/backup.tar"
+
+-----------------------------------------------------------------------------
+- Estudiar las técnicas de optimización de consultas y cómo usar EXPLAIN para analizar el rendimiento de las consultas.
+-----------------------------------------------------------------------------
+
+Forma 1: a través de índices. En caso de que una tabla se consulte de forma recurrente y específicamente ciertos campos de la misma.
+create INDEX t_sales_date_idx ON t_sales (date); # Crea el índice "t_sales_date_idx" sobre la tabla "t_sales" y el campo "date"
+
+Forma 2: a tavés del comando EXPLAIN. Devuelve el plan de ejecución de la consulta sobre la que se aplica, indicando los costos y el recorrido que hace para obtener el resultado
+explain select * from t_sales s inner join t_sales_details sd on s.number = sd.number where s.number = '000000000001';
+
+Forma 3: Uso correcto del operador LIKE
+Si se desea buscar los clientes con el apellido "Boffelli".
+Evitar el uso de esta forma: select * from o_customers where name like 'Boffelli'
+y en lugar usar la forma: select * from o_customers where name like '%Boffelli'
+Esto usa el simbolo % como prefijo a la palabra a buscar para buscar todos los registros en la columna "name" que terminen con esa palabra
+
+Forma 4: uso de límites. En casos donde la consulta devuelve muchos registros, muchas veces no es necesario obtener TODOS para resolver lo requerido en la consulta por lo que se recomienda asignar límites a través de filtros en un WHERE o del uso del comando LIMIT
+select * from t_sales order by date desc limit 100; # Trae las últimas 100 facturas realizadas
+
+Forma 5: uso del tipo apropiado de tipo de datos, por ejemplo un smallint en caso de cargar una edad ya que ocupa mucho menos que un int tradicional.
+
+Forma 6: evitar el uso excesivo de subqueries. Muchas veces una subquery se puede resolver con un join, los cuales usualmente son más óptimos.
+En lugar de: select * from t_sales where customer = (select id from o_customers where name = 'Marco Ruben')
+Usar: select * from t_sales s inner join o_customers c on s.customer = c.id where c.name = 'Marco Ruben'
+
+Forma 7: a través del uso de prepared statements. En casos donde la misma consulta se use repetidamente en el tiempo, esta se puede guardar a modo de plantilla y solo pasarle los parámetros que se desee cambiar
+Ejemplo:
+En lugar de:
+select * from t_sales s inner join t_sales_details sd on s.number = sd.number where s.number = '000000000001';
+select * from t_sales s inner join t_sales_details sd on s.number = sd.number where s.number = '000000000002';
+select * from t_sales s inner join t_sales_details sd on s.number = sd.number where s.number = '000000000003';
+Usar:
+prepare get_document_data(number) as select * from t_sales s inner join t_sales_details sd on s.number = sd.number where s.number = $number;
+execute get_document_data(000000000001);
+execute get_document_data(000000000002);
+execute get_document_data(000000000003);
+
+Forma 8: usando pulls de conexiones.
+Gestionando pulls de conexiones se evita la sobrecarga generada por conectarse y desconectarse repetidamente a la base de datos. En lugar de esto, permite el reuso de conexiones
+
+Forma 9: usando ANALYZE y VACUUM.
+ANALIZE: postgresql guarda estadísticas sobre queries realizadas e índices creados en la tabla pg_statistic. Si esta información no está actualizada al día, puede generar ineficientes planes de ejecución de queries. El comando ANALIZE permite actualizar esta información.
+Ejemplo: analyze t_sales; # Actualiza las estadísticas de consultas e índices realizados sobre la tabla "t_sales"
+
+VACUUM: cuando insertas, actualizas o eliminas registros en una tabla, postgresql no libera inmediatamente el espacio en disco. Lo marca como "reusable" o "espacio muerto" y estos "fragmentos" de espacio se pueden ir acumulando en el tiempo. VACUUM es una forma de "desfragmentar" el espacio de una tabla.
+Ejemplo: vacuum t_sales; # "Desfragmenta" el espacio muerto en la tabla "t_sales"
+
+Referencia: https://nodeteam.medium.com/how-to-optimize-postgresql-queries-226e6ff15f72
+
+-----------------------------------------------------------------------------
+Configurar herramientas de monitoreo como pg_stat_statements para analizar el rendimiento de la base de datos.
+-----------------------------------------------------------------------------
+
+Para configurar pg_stat_statements hay que seguir varios pasos:
+- Instalar el paquete postgresql-contrib: sudo apt install postgresql-contrib16
+- Editar el archivo ubicado en /var/lib/pgsql/data/postgresql.conf. Particularmente, el campo "shared_preload_libraries" hay que descomentarlo y agregarle asignarle el valor "pg_stat_statements"
+shared_preload_libraries = 'pgaudit,pg_stat_statements'
+- Reiniciar postgresql. En mi caso reinicie el contenedor de docker.
+- Conectarse a la base de datos y crear la extension en la misma:
+create extension pg_stat_statements;
+
+Luego para verificar su funcionamiento hay que ejecutar la consulta:
+select * from pg_stat_statements;
+
+Utilización: un buen ejemplo de uso de pg_stat_statements es a través de la siguiente consulta:
+
+SELECT substring(query, 1, 50) AS short_query,
+              round(total_exec_time::numeric, 2) AS total_exec_time,
+              calls,
+              round(mean_exec_time::numeric, 2) AS mean,
+              round((100 * total_exec_time /
+              sum(total_exec_time::numeric) OVER ())::numeric, 2) AS percentage_cpu
+FROM    pg_stat_statements
+ORDER BY total_exec_time DESC
+
+Devuelve las queries que se ejecutan en la base de datos, ordenados por tiempo de ejecución en forma descendente.
+Nos ayuda a identificar tiempos de procesamiento excesivos.
+
+Referencia: https://a2systems.co/blog/blog-2/usando-pg-stat-statements-167
+
+-----------------------------------------------------------------------------
+Investigar cómo funcionan las transacciones en PostgreSQL y el manejo de bloqueos(conocidos como deadlocks)
+-----------------------------------------------------------------------------
+
+Una transacción permite ejecutar un bloque de código sql en su totalidad y aplicar los cambios correspondientes en la base de datos una vez finalizadas con éxito.
+En caso de que el bloque de código sea exitoso, se realiza un "commit" en la base de datos y se aplican los cambios.
+En caso de que el bloque de código produzca error, se realiza un "rollback" y se revierten los cambios que se hayan hecho.
+
+Las transacciones siempre comienzan con la palabra reservada BEGIN y finalizan con COMMIT o ROLLBACK, según corresponda.
+Ejemplo de transacción:
+
+BEGIN;
+CREATE TABLE t_sales (
+    number VARCHAR(12) PRIMARY KEY,
+    external_number VARCHAR(12),
+    class CHAR(1),
+    date TIMESTAMP,
+    total_price FLOAT,
+    tax FLOAT
+);
+
+INSERT INTO t_sales (number, external_number, class, date, total_price, tax) VALUES
+('000000000001', 'EXT000001', 'A', '2024-07-16 10:00:00', 100.50, 10.05),
+('000000000002', 'EXT000002', 'B', '2024-07-16 11:00:00', 200.75, 20.07),
+('000000000003', 'EXT000003', 'A', '2024-07-16 12:00:00', 150.20, 15.02),
+('000000000004', 'EXT000004', 'C', '2024-07-16 13:00:00', 300.90, 30.09),
+('000000000005', 'EXT000005', 'B', '2024-07-16 14:00:00', 250.60, 25.06);
+
+select * from t_sales;
+
+COMMIT;
+
+Si la misma transacción se ejecuta dos veces, toma prioridad la que lo haya hecho primero. Luego ejecuta la siguiente.
+Se puede hacer un rollback manual para revertir los cambios indebido por una transacción.
+
+Las transacciones producen bloqueos sobre las tablas que trabajan. Estos bloqueos se definen en 3 niveles de aislamiento (ISOLATION):
+Read Commited: Nivel por defecto. Permite a otras transacciones leer información modificada por la presente transacción incluso si todavía estos cambios no fueron commiteados.
+Repeatable read: No permite a otras transacciones leer los cambios no commiteados.
+Serializable: nivel mas restrictivo. El bloqueo no permite a otras queries editar ni eliminar sobre esas tablas. Tampoco permite a otras queries ver los cambios realizados por la transaccion serializable hasta que esta los comitee.
+
+Referencias:
+https://medium.com/yavar/transactions-in-postgresql-a90b09faa80c
+https://medium.com/@anton.martyniuk/getting-started-with-sql-transactions-in-postgresql-ca6285175d62
+https://www.postgresql.org/docs/current/transaction-iso.html
+https://www.youtube.com/watch?v=G8wDjV0N9tk
+https://www.thenile.dev/blog/transaction-isolation-postgres
+
+Un "deadlock" es un estado que ocurre cuando una transacción espera a que otra transacción libere un recurso, pero a su vez la segunda transacción se encuentra esperando a que la primera libere otro recurso.
+Ambas se encuentran esperando recursos bloqueados por la otra, por lo que se produce un bloqueo indefinido.
+Se recomienda utilizar herramientas de monitoreo para detectarlos y encontrar la mejor forma de solucionarlos.
+
+Referencias:
+https://www.postgresql.org/docs/current/explicit-locking.html
+https://www.linkedin.com/pulse/deadlock-resolving-deadlocks-skip-locked-postgresql-sarvaha-systems
+https://www.cybertec-postgresql.com/en/postgresql-understanding-deadlocks/
+
+-----------------------------------------------------------------------------
+Investigar cómo configurar la autenticación y autorización en PostgreSQL
+-----------------------------------------------------------------------------
+
+Para gestionar la autenticación en postgre, se debe editar el archivo ubicado en /var/lib/postgresql/data/pg_hba.conf.
+Tiene un formato similar al siguiente:
+
+# TYPE  DATABASE        USER            ADDRESS                 METHOD
+
+  local   all             all                                   trust
+
+El tipo refiere a la forma en la que se accede a la base de datos. Local, ssh, host, etc.
+Database y user refiere a sobre cuál database y cuál user se va a aplicar esta regla.
+Address, refiere a la dirección de la máquina del usuario que va a entrar a la database.
+Y Method, refiere al método de autenticación que se le exige a ese usuario. Existen diversos tipos como "trust", que permite el acceso directo sin contraseñas, "reject" que permanentemente bloquea el acceso y "password" que exige ingresar una contraseña para loggearse.
+
+Referencia: https://medium.com/@s.k.thakur.contact/postgresql-authorization-and-authentication-5f1ddb2c4a59
